@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: CC0-1.0
 
-name: 'reuse-me'
+name: 'ReuseMe - REUSE Copyright and License management'
 author: 'Kevin de Jong'
 description: >
   Validate the files committed as part of a Pull Request against REUSE compliance.
@@ -11,11 +11,6 @@ branding:
   icon: 'code'  
   color: 'white'
 
-inputs:
-  token: 
-    description: 'GitHub token used to access GitHub (eg. github.token)'
-    required: true
-
 runs:
-  using: 'node16'
+  using: 'node20'
   main: 'lib/action/index.js'

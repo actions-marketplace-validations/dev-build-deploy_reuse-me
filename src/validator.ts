@@ -1,93 +1,75 @@
-/* 
-SPDX-FileCopyrightText: 2023 Kevin de Jong <monkaii@hotmail.com>
+/*
+ * SPDX-FileCopyrightText: 2023 Kevin de Jong <monkaii@hotmail.com>
+ * SPDX-License-Identifier: MIT
+ */
 
-SPDX-License-Identifier: GPL-3.0-or-later
-*/
+import * as reuse from "@dev-build-deploy/reuse-it";
+import * as sarif from "@dev-build-deploy/sarif-it";
 
-import { IDataSource } from "./datasources";
-import { IFile, ISPDXHeader, IValidationResult } from "./interfaces";
-
-import * as spdx from "./spdx";
-import * as debian from "./debian"
+import * as tool from "./config/tool.json";
+import { IValidationResult } from "./interfaces";
+import { fileRequirements, projectRequirements } from "./requirements";
 
 /**
- * Validation of a single file against the Reuse specification.
- * @param file File to validate
- * @param datasource Datasource (git, github, etc.) to retrieve file contents from
- * @param debianLicenseMap Debian package configuration mapping against the file
- * @returns 
+ * Validates all files against requirements related to File contents
+ * @param sbom The SBOM containing the files to validate
+ * @returns List of validation results
  */
-const validateSingleFile = async (file: IFile, datasource: any, debianLicenseMap: any): Promise<IValidationResult> => {
-  // Determine the SPDX header of the file
-  let header: ISPDXHeader | undefined = undefined;
+function validateFiles(sbom: reuse.SoftwareBillOfMaterials): IValidationResult[] {
+  const requirements = fileRequirements();
 
-  // First we check whether the file is matched in the Debian package configuration
-  const debianFileLicense = debianLicenseMap.get(file.filePath)
-  if (debianFileLicense !== undefined) {
-    header = debianFileLicense;
-  }
+  return sbom.files.map(file => {
+    const results = requirements
+      .map(req => [...req.validate(req.rule, file)])
+      .filter(errors => errors !== undefined)
+      .flat();
 
-  // Next we check for an available .license file, as part of optimization for large
-  // binary files.
-  if (spdx.isValidSPDXHeader(header) === false) {
-    header = spdx.getSPDXHeader(await datasource.getFileContents(file.licensePath));
-  }
-
-  // Otherwise, we check the original file.
-  if (spdx.isValidSPDXHeader(header) === false) {
-    header = spdx.getSPDXHeader(await datasource.getFileContents(file.filePath));
-  }
-
-  const result: IValidationResult = {
-    file: file.source === "original" ? file.filePath : file.licensePath,
-    compliant: spdx.isValidSPDXHeader(header),
-    errors: [],
-    header: header
-  }
-
-  if (result.compliant === false) {
-    if (result.header === undefined) {
-      result.errors.push(`File does not contain a valid SPDX header.`)
-    } else {
-      if (result.header?.copyright.length === 0 && result.header?.licenses.length === 0) {
-        result.errors.push(`Missing (or invalid) SPDX Copyright (SPDX-FileCopyrightText) and License (SPDX-License-Identifier) statements.`)
-      } else if (result.header?.copyright.length === 0) {
-        result.errors.push(`Missing (or invalid) SPDX Copyright (SPDX-FileCopyrightText) statement.`)
-      } else if (result.header?.licenses.length === 0) {
-        result.errors.push(`Missing (or invalid) SPDX License (SPDX-License-Identifier) statement.`)
-      }
-    }
-  }
-
-  return result;
+    return { file: file, compliant: results.length === 0, results: results };
+  });
 }
 
 /**
- * Validates all files in the provided datasource against the Reuse specification.
- * @param datasource Datasource (git, github, etc.)
+ * Validates the SBOM against requirements related to the project
+ * @param sbom The SBOM (Project) to validate
+ * @returns Validation result
  */
-const validate = async (datasource: IDataSource): Promise<IValidationResult[]> => {
-  const changedFiles = await datasource.getChangedFiles();
-  const debianConfig = debian.load(await datasource.getFileContents(".reuse/dep5"))
-  const debianLicenseMap = debianConfig ? debian.licenseMap(debianConfig, changedFiles) : new Map<string, ISPDXHeader>();
+function validateSBOM(sbom: reuse.SoftwareBillOfMaterials): IValidationResult {
+  const requirements = projectRequirements();
 
-  // Validate each file asynchronously
-  const promises = [];
-  for (let file of changedFiles) {
-    // Skip files in the LICENSES/ directory
-    if (file.filePath.startsWith("LICENSES/") || file.filePath === ".reuse/dep5") {
-      continue;
-    }
+  const results = requirements
+    .map(req => [...req.validate(req.rule, sbom)])
+    .filter(errors => errors !== undefined)
+    .flat();
 
-    // Skip original source files which have been removed
-    if (file.source === "original" && file.modification === "removed") {
-      continue;
-    }
-
-    promises.push(validateSingleFile(file, datasource, debianLicenseMap))
-  }
-
-  return await Promise.all(promises);
+  return { file: sbom.files[0], compliant: results.length === 0, results: results }; //errors.length === 0, errors: errors };
 }
 
-export { validate }
+/**
+ * Validates the provided SBOM against the requirements (both project and file requirements)
+ * @param sbom The SBOM to validate
+ * @returns Validation results
+ */
+export function validate(sbom: reuse.SoftwareBillOfMaterials): { errorCount: number; log: sarif.Log } {
+  const run = new sarif.Run(new sarif.Tool(tool.driver.name, tool.driver));
+  const log = new sarif.Log().addRun(run);
+
+  let errorCount = 0;
+  const projectResults = validateSBOM(sbom);
+  projectResults.results.forEach(res => {
+    run.addResult(res);
+    errorCount += res.properties()?.occurrenceCount ?? 0;
+  });
+
+  const results = validateFiles(sbom);
+  results.forEach(result =>
+    result.results.forEach(res => {
+      run.addResult(res);
+      errorCount += res.properties()?.occurrenceCount ?? 0;
+    })
+  );
+
+  return {
+    errorCount: errorCount,
+    log: log,
+  };
+}

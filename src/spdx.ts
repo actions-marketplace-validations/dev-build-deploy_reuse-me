@@ -1,67 +1,49 @@
-/* 
-SPDX-FileCopyrightText: 2023 Kevin de Jong <monkaii@hotmail.com>
-
-SPDX-License-Identifier: GPL-3.0-or-later
-*/
-
-import { ICopyrightText, ISPDXHeader } from "./interfaces";
-
-/** 
- * Retrieves the SPDX Header from the provided contents, if it exists.
- * Expected formats:
- *   SPDX-FileCopyrightText: [year] [copyright holder] <[email address]>
- *   SPDX-License-Identifier: [identifier]
- * @param contents The contents of the file to parse
- * @returns The SPDX Header, if it exists
+/*
+ * SPDX-FileCopyrightText: 2023 Kevin de Jong <monkaii@hotmail.com>
+ * SPDX-License-Identifier: MIT
  */
-const getSPDXHeader = (contents: string): ISPDXHeader | undefined => {
-  const SPDXCopyrightHeaderRegex = /SPDX-FileCopyrightText:\s*(©|[Cc]opyright|\([Cc]\))*\s*(?<year>[\d,-\s]*)\s*(?<copyrightHolder>[^\<\n]*)\s(<(?<contactAddress>.*)>)?/g;
-  const SPDXLicenseHeaderRegex = /SPDX-License-Identifier:\s*(?<identifier>.*)/g;
 
-  const copyrightMatches = contents.matchAll(SPDXCopyrightHeaderRegex);
-  const licenseMatches = contents.matchAll(SPDXLicenseHeaderRegex);
+import * as reuse from "@dev-build-deploy/reuse-it";
 
-  const header: ISPDXHeader = {
-    copyright: [],
-    licenses: []
-  }
+/**
+ * Checks whether the provided file has a valid SPDX license.
+ * @param file SPDX file to validate
+ * @returns True if the file has a valid license, false otherwise
+ */
+export function hasValidLicense(file: reuse.SpdxFile): boolean {
+  return (
+    file.licenseInfoInFiles.length > 0 &&
+    !(file.licenseInfoInFiles.length === 1 && file.licenseInfoInFiles[0] === "NOASSERTION")
+  );
+}
 
-  for (const match of licenseMatches) {
-    // Skip invalid matches
-    if (match?.groups === undefined) continue;
-
-    header.licenses.push(match.groups?.identifier.trim());
-  }
-
-  for (const match of copyrightMatches) {
-    // Skip invalid matches
-    if (match?.groups === undefined) continue;
-
-    let copyright: ICopyrightText = {
-      copyrightHolder: match.groups.copyrightHolder.trim()
-    }
-    if (match.groups.year.length > 0) {
-      copyright.year = match.groups.year.trim()
-    }
-    if (match.groups.contactAddress) {
-      copyright.contactAddress = match.groups.contactAddress.trim()
-    }
-    header.copyright.push(copyright);
-  }
-
-  return header
-};
+/**
+ * Checks whether the provided file has a valid SPDX copyright statement.
+ * @param file SPDX file to validate
+ * @returns True if the file has a valid copyright statement, false otherwise
+ */
+export function hasValidCopyrightText(file: reuse.SpdxFile): boolean {
+  return file.copyrightText !== undefined && file.copyrightText !== "";
+}
 
 /**
  * Validates whether the provided header is a valid SPDX header.
  * @param header SPDX header to validate
  * @returns True if the header is valid, false otherwise
  */
-const isValidSPDXHeader = (header: ISPDXHeader | undefined): boolean => {
-  return header !== undefined && header.licenses.length > 0 && header.copyright.length > 0
+export function isReuseCompliant(file: reuse.SpdxFile): boolean {
+  return hasValidLicense(file) && hasValidCopyrightText(file);
 }
 
-export {
-  getSPDXHeader,
-  isValidSPDXHeader
+/**
+ * Extracts all individual license names from the license information in file.
+ * @param file SPDX file to extract the licenses from
+ * @returns List of individual licenses
+ */
+export function getIndividualLicences(file: reuse.SpdxFile): string[] {
+  return file.licenseInfoInFiles
+    .filter(license => license !== "NOASSERTION")
+    .map(license => license.split(/( AND | OR )/))
+    .flat()
+    .filter(license => license !== " AND " && license !== " OR ");
 }

@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 
-/* 
-SPDX-FileCopyrightText: 2023 Kevin de Jong <monkaii@hotmail.com>
+/*
+ * SPDX-FileCopyrightText: 2023 Kevin de Jong <monkaii@hotmail.com>
+ * SPDX-License-Identifier: MIT
+ */
 
-SPDX-License-Identifier: GPL-3.0-or-later
-*/
+import * as fs from "fs";
 
+import * as diagnostics from "@dev-build-deploy/diagnose-it";
+import * as reuse from "@dev-build-deploy/reuse-it";
 import { Command } from "commander";
+
 import { GitSource } from "../datasources";
 import { validate } from "../validator";
 
@@ -18,42 +22,51 @@ const program = new Command();
 program
   .name("reuse-me")
   .description("Copyright and License management CLI tool")
+  .option("-s, --sbom-output <file>", "Output path for the Software Bill of Materials (SBOM).")
+  .option("-c, --sarif-output <file>", "Output path for the SARIF file.")
+  .action(async options => {
+    console.log("📄 ReuseMe - REUSE compliance validation");
+    console.log("----------------------------------------");
+    console.log();
 
-/**
- * Validate command
- */
-program
-  .command("check")
-  .description(
-    "Checks whether the repository is compliant with the Reuse Specification."
-  )
-  .option("-a, --all", "Check all files in the repository")
-  .action(async (options) => {
-    console.log("📄 ReuseMe - REUSE compliance validation")
-    console.log("----------------------------------------")
+    const datasource = new GitSource();
+    const sbom = new reuse.SoftwareBillOfMaterials(await datasource.getRepositoryName(), "reuse-me@v0");
+    const files = await datasource.getFiles();
+    await sbom.addFiles(files);
 
-    const results = await validate(new GitSource(options.all));
-    let errorCount = 0;
-    for (const result of results) {
-      // For now, we skip the compliant files in case we scan the full repository
-      if (options.all && result.compliant) continue;
+    const results = validate(sbom);
 
-      errorCount += result.errors.length;
+    for (const error of diagnostics.extractFromSarif(results.log)) {
+      console.log(error.toString());
+    }
 
-      console.log(`${result.compliant ? "✅" : "❌"} ${result.file}`)
-      for (const error of result.errors) {
-        console.log(`   ${error}`)
+    if ((options.sarifOutput || options.sbomOutput) && results.errorCount > 0) {
+      console.log();
+      console.log("----------------------------------------");
+    }
+
+    if (options.sarifOutput) {
+      console.log(`✏️  Writing SARIF file...`);
+      fs.writeFileSync(options.sarifOutput, JSON.stringify(results.log.properties(), null, 2));
+    }
+
+    if (options.sbomOutput) {
+      if (results.errorCount === 0) {
+        console.log(`✏️  Writing Software Bill of Materials file...`);
+        fs.writeFileSync(options.sbomOutput, JSON.stringify(sbom, null, 2));
+      } else {
+        console.log(`⚠️  Skipping Software Bill of Materials file...`);
       }
     }
 
-    if (!options.all || errorCount > 0) {
-      console.log("----------------------------------------")
+    if (options.sarifOutput || options.sbomOutput || results.errorCount > 0) {
+      console.log("----------------------------------------");
     }
 
-    if (errorCount === 0) {
-      console.log(`✅ Found no REUSE compliance issues.`)
+    if (results.errorCount === 0) {
+      console.log(`✅ Found no REUSE compliance issues.`);
     } else {
-      program.error(`❌ Found ${errorCount} REUSE compliance issues.`)
+      program.error(`❌ Found ${results.errorCount} REUSE compliance issues.`);
     }
   });
 

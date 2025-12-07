@@ -7,10 +7,8 @@
 name: Validate Package
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
+  workflow_call:
 
 jobs:
   unit-tests:
@@ -18,10 +16,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Node.js 16.x
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 16.x
 

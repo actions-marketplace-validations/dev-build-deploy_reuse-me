@@ -1,63 +1,57 @@
 /*
-SPDX-FileCopyrightText: 2023 Kevin de Jong <monkaii@hotmail.com>
+ * SPDX-FileCopyrightText: 2023 Kevin de Jong <monkaii@hotmail.com>
+ * SPDX-License-Identifier: MIT
+ */
 
-SPDX-License-Identifier: GPL-3.0-or-later
-*/
+import * as fs from "fs";
 
+import * as artifact from "@actions/artifact";
 import * as core from "@actions/core";
-import * as github from "@actions/github";
+import * as diagnostics from "@dev-build-deploy/diagnose-it";
+import * as reuse from "@dev-build-deploy/reuse-it";
 
-import * as githubWrapper from "../github"
-import { CommitsSource, GitSource, IDataSource } from "../datasources";
+import { GitSource } from "../datasources";
 import { validate } from "../validator";
+
+/**
+ * Uploads the SBOM to GitHub Artifacts.
+ * @param sbom The SBOM to upload
+
+ */
+async function uploadSBOM(sbom: reuse.SoftwareBillOfMaterials): Promise<void> {
+  const client = new artifact.DefaultArtifactClient();
+  fs.writeFileSync("sbom.json", JSON.stringify(sbom, null, 2));
+  await client.uploadArtifact("ReuseMe SBOM", ["sbom.json"], ".");
+  core.info("Uploaded Software Bill of Materials to GitHub Artifacts.");
+}
 
 /**
  * Main entry point for the GitHub Action.
  */
 async function run(): Promise<void> {
   try {
-    core.info("📄 ReuseMe - REUSE compliance validation")
-    // Setup environment
-    let datasource: IDataSource;
-    let errorCount = 0;
+    core.info("📄 ReuseMe - REUSE compliance validation");
 
-    // Store input parameters
-    const token = core.getInput("token") ?? undefined;
+    const datasource = new GitSource();
+    const sbom = new reuse.SoftwareBillOfMaterials(await datasource.getRepositoryName(), "reuse-me@v0");
+    const files = await datasource.getFiles();
+    await sbom.addFiles(files);
 
-    // Validate files changed as part of the Pull Request
-    if (github.context.eventName === "pull_request" && token !== undefined) {
-      core.startGroup("🔎 Scanning Pull Request")
-      // Configure the GitHub context
-      githubWrapper.setRepositoryContext(github.context.repo.owner, github.context.repo.repo, github.context.ref);
-      const octokit = github.getOctokit(token);
-      const pullRequestNumber = github.context.payload.number;
+    const results = validate(sbom);
 
-      // Retrieve the commits of the pull request and setup the datasource
-      const commits = await githubWrapper.getPullRequestCommits(octokit, pullRequestNumber)
-      datasource = new CommitsSource(octokit.rest, commits);
+    if (results.errorCount === 0) {
+      await uploadSBOM(sbom);
+      core.info(`✅ Found no REUSE compliance issues.`);
     } else {
-      core.startGroup("🔎 Scanning repository")
-      datasource = new GitSource(true);  // Validate all files in the repository
-    }
-    core.endGroup()
-
-    core.startGroup("📝 Validation results")
-    const results = await validate(datasource)
-    for (const result of results) {
-      core.info(`${result.compliant ? "✅" : "❌"} ${result.file}`)
-      errorCount += result.errors.length;
-      for (const error of result.errors) {
-        core.error(error, { title: "REUSE Compliance", file: result.file })
+      for (const error of diagnostics.extractFromSarif(results.log)) {
+        core.error(error.toString(), {
+          title: "REUSE Compliance",
+          file: error.file,
+        });
       }
+      console.info();
+      core.setFailed(`❌ Found ${results.errorCount} REUSE compliance issues.`);
     }
-    core.endGroup()
-
-    if (errorCount === 0) {
-      core.info(`✅ Found no REUSE compliance issues.`)
-    } else {
-      core.setFailed(`❌ Found ${errorCount} REUSE compliance issues.`)
-    }
-
   } catch (ex) {
     core.setFailed((ex as Error).message);
   }

@@ -1,7 +1,6 @@
 <!-- 
 SPDX-FileCopyrightText: 2023 Kevin de Jong <monkaii@hotmail.com>
-
-SPDX-License-Identifier: GPL-3.0-or-later
+SPDX-License-Identifier: MIT
 -->
 
 # Command Line Interface
@@ -11,14 +10,11 @@ SPDX-License-Identifier: GPL-3.0-or-later
 A pre-compiled version of the CLI is already provided as part of this repository. One can therefore:
 
 ```sh
-# Clone the repository
-$ git clone https://github.com/dev-build-deploy/reuse-me.git
-
-# Go the local copy of the repository
-$ cd reuse-me
+# Install the CLI tool
+$ npm install -g https://github.com/dev-build-deploy/reuse-me
 
 # Run the CLI tool
-$ ./lib/cli/index.js
+$ reuse-me
 ```
 
 > **NOTE**: Creation of an installable package is part of the roadmap!
@@ -29,51 +25,33 @@ $ ./lib/cli/index.js
 
 You can find more information about the possible commands with the `--help` flag, i.e.:
 
-```sh
-$ ./lib/cli/index.js --help
 
-Usage: reuse-me [options] [command]
+
+```sh
+$ reuse-me --help
+
+Usage: reuse-me [options]
 
 Copyright and License management CLI tool
 
 Options:
-  -h, --help       display help for command
+  -s, --sbom-output <file>  output path for the Software Bill of Materials (SBOM)
+  -h, --help                display help for command
 
-Commands:
-  check [options]  Checks whether the repository is compliant with the Reuse Specification.
-  help [command]   display help for command
 ```
 
-### Validate your repository
+By default, ReuseMe will use information from `git` to exclude ignored files.
 
+<img src="./images/cli_example.svg">
 
-Running the `check` command will perform local validation of your repository.
+### Software Bill of Materials
+
+You can generate a SPDX 2.3 compliant Software Bill of Materials (SBOM) by specifying the `--sbom-output` option;
 
 ```sh
-Usage: reuse-me check [options]
-
-Checks whether the repository is compliant with the Reuse Specification.
-
-Options:
-  -a, --all   Check all files in the repository
-  -h, --help  display help for command
+$ reuse-me --sbom-output sbom.json
 ```
 
- By default, it will use your `git` status to determine which files to validate, i.e.:
+The result is redirected to the specified file.
 
-```sh
-$ ./lib/cli/index.js check
-
-📄 ReuseMe - REUSE compliance validation
-----------------------------------------
-❌ docs/cli.md
-   Missing (or invalid) SPDX Copyright (SPDX-FileCopyrightText) and License (SPDX-License-Identifier) statements.
-✅ lib/action/index.js
-✅ lib/cli/index.js
-✅ lib/probot/index.js
-✅ src/datasources.ts
-----------------------------------------
-✅ Found no REUSE compliance issues.
-```
-
-Additionally, you can use the `--all` flag to validate _all_ files in your repository.
+[Reuse specification]: https://reuse.software/spec/

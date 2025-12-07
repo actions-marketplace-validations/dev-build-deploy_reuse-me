@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2023 Kevin de Jong <monkaii@hotmail.com>
+# SPDX-License-Identifier: CC0-1.0
+
+repos:
+- repo: https://github.com/dev-build-deploy/commit-me
+  rev: v1.4.0
+  hooks:
+  - id: commit-me
+    args: [
+      # Custom configuration file path
+      '--config', '.github/.commit-me.json'
+    ]
+- repo: https://github.com/dev-build-deploy/reuse-me
+  rev: v1.0.0
+  hooks:
+  - id: reuse-me
