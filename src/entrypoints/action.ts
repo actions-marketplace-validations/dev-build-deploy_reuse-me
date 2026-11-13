@@ -11,6 +11,7 @@ import * as diagnostics from "@dev-build-deploy/diagnose-it";
 import * as reuse from "@dev-build-deploy/reuse-it";
 
 import { GitSource } from "../datasources";
+import { toolName } from "../utils";
 import { validate } from "../validator";
 
 /**
@@ -33,11 +34,13 @@ async function run(): Promise<void> {
     core.info("📄 ReuseMe - REUSE compliance validation");
 
     const datasource = new GitSource();
-    const sbom = new reuse.SoftwareBillOfMaterials(await datasource.getRepositoryName(), "reuse-me@v0");
+    // File paths are relative to the repository root, which is where .reuse/dep5 and LICENSES/ are found
+    process.chdir(await datasource.getRootPath());
+    const sbom = new reuse.SoftwareBillOfMaterials(await datasource.getRepositoryName(), toolName());
     const files = await datasource.getFiles();
     await sbom.addFiles(files);
 
-    const results = validate(sbom);
+    const results = validate(sbom, { complete: true });
 
     if (results.errorCount === 0) {
       await uploadSBOM(sbom);
